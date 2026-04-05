@@ -112,3 +112,66 @@ export function filterArticles(articles, search) {
     (a) => a.title.toLowerCase().includes(q) || a.tags.some((tag) => tag.includes(q))
   );
 }
+
+// =============================================================================
+// ASSETS
+// =============================================================================
+
+export async function fetchAssets(filters = {}) {
+  const params = new URLSearchParams(filters).toString();
+  const res = await fetch(`${API}/assets?${params}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  return res.json();
+}
+
+export async function fetchAssetStats() {
+  const res = await fetch(`${API}/assets/stats`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  return res.json();
+}
+
+export async function createAsset(formData) {
+  const res = await fetch(`${API}/assets`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(formData),
+  });
+  return res.json();
+}
+
+export async function updateAsset(assetId, updates) {
+  const res = await fetch(`${API}/assets/${assetId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(updates),
+  });
+  return res.json();
+}
+
+export async function deleteAsset(assetId) {
+  const res = await fetch(`${API}/assets/${assetId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  return res.json();
+}
+
+export async function assignAsset(assetId, userId) {
+  const res = await fetch(`${API}/assets/${assetId}/assign`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ userId }),
+  });
+  return res.json();
+}

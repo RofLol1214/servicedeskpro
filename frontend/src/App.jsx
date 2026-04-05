@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { MOCK_TICKETS } from "./mockData";
+import { AssetManagement } from "./pages";
 import {
   LoginPage,
   Sidebar,
@@ -28,6 +29,7 @@ export default function App() {
     impact:    <ImpactAnalysis tickets={tickets} />,
     kb:        <KnowledgeBase />,
     users:     <UsersPage />,
+    assets: <AssetManagement currentUser={currentUser} />,
   };
 
   return (

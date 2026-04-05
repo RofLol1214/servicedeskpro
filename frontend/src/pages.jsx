@@ -8,7 +8,12 @@ import {
 import {
   getUserById, authenticateUser, createTicket, createComment,
   updateTicketStatus, assignTicket, addCommentToTicket, createCI,
-  getImpactedCIs, getAlerts, timeAgo, filterTickets, filterCIs, filterArticles,
+  getImpactedCIs, getAlerts, timeAgo, filterTickets, filterCIs, filterArticles,   fetchAssets,       // ADD
+  fetchAssetStats,   // ADD
+  createAsset,       // ADD
+  updateAsset,       // ADD
+  deleteAsset,       // ADD
+  assignAsset,       // ADD
 } from "./service";
 import { MOCK_USERS, MOCK_CIS, KB_ARTICLES } from "./mockData";
 
@@ -77,15 +82,15 @@ export function LoginPage({ onLogin }) {
 // SIDEBAR
 // =============================================================================
 export function Sidebar({ currentPage, setPage, currentUser, onLogout }) {
-  const navItems = [
-    { id: "dashboard", label: "Dashboard",       icon: "dashboard" },
-    { id: "tickets",   label: "Tickets",         icon: "ticket"    },
-    { id: "cmdb",      label: "CMDB",            icon: "server"    },
-    { id: "impact",    label: "Impact Analysis", icon: "impact"    },
-    { id: "kb",        label: "Knowledge Base",  icon: "kb"        },
-    ...(currentUser.role === "admin" ? [{ id: "users", label: "Users", icon: "users" }] : []),
-  ];
-
+const navItems = [
+  { id: "dashboard", label: "Dashboard",        icon: "dashboard" },
+  { id: "tickets",   label: "Tickets",          icon: "ticket"    },
+  { id: "assets",    label: "Asset Management", icon: "server"    }, // ADD
+  { id: "cmdb",      label: "CMDB",             icon: "graph"     },
+  { id: "impact",    label: "Impact Analysis",  icon: "impact"    },
+  { id: "kb",        label: "Knowledge Base",   icon: "kb"        },
+  ...(currentUser.role === "admin" ? [{ id: "users", label: "Users", icon: "users" }] : []),
+];
   return (
     <aside className="w-56 bg-[#0d1117] border-r border-white/5 flex flex-col h-screen fixed left-0 top-0">
       <div className="p-4 border-b border-white/5">
@@ -923,6 +928,586 @@ export function NotificationBell({ tickets }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// =============================================================================
+// ASSET MANAGEMENT PAGE
+// =============================================================================
+export function AssetManagement({ currentUser }) {
+  const [assets, setAssets]       = useState([]);
+  const [stats, setStats]         = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [selected, setSelected]   = useState(null);
+  const [showForm, setShowForm]   = useState(false);
+  const [filter, setFilter]       = useState({ type: "all", status: "all", search: "" });
+
+  useEffect(() => {
+    Promise.all([fetchAssets(), fetchAssetStats()])
+      .then(([a, s]) => {
+        setAssets(Array.isArray(a) ? a : []);
+        setStats(s);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCreate = async (formData) => {
+    const newAsset = await createAsset(formData);
+    setAssets((prev) => [newAsset, ...prev]);
+    setShowForm(false);
+  };
+
+  const handleDelete = async (assetId) => {
+    await deleteAsset(assetId);
+    setAssets((prev) => prev.filter((a) => a._id !== assetId));
+    setSelected(null);
+  };
+
+  const handleUpdate = async (assetId, updates) => {
+    const updated = await updateAsset(assetId, updates);
+    setAssets((prev) => prev.map((a) => a._id === assetId ? updated : a));
+    setSelected(updated);
+  };
+
+  const filtered = assets.filter((a) => {
+    if (filter.type   !== "all" && a.type   !== filter.type)   return false;
+    if (filter.status !== "all" && a.status !== filter.status) return false;
+    if (filter.search && !a.name.toLowerCase().includes(filter.search.toLowerCase())) return false;
+    return true;
+  });
+
+  const ASSET_TYPE_COLORS = {
+    "Laptop":             "text-blue-400",
+    "Desktop":            "text-indigo-400",
+    "Monitor":            "text-cyan-400",
+    "Peripheral":         "text-teal-400",
+    "Server":             "text-violet-400",
+    "Network Equipment":  "text-purple-400",
+    "Software License":   "text-emerald-400",
+    "Mobile Device":      "text-pink-400",
+  };
+
+  const ASSET_STATUS_COLORS = {
+    "Active":     "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
+    "In Repair":  "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+    "Retired":    "bg-zinc-500/20 text-zinc-400 border border-zinc-500/30",
+    "Disposed":   "bg-red-500/20 text-red-300 border border-red-500/30",
+    "In Stock":   "bg-blue-500/20 text-blue-300 border border-blue-500/30",
+  };
+
+  const ASSET_TYPE_ICONS = {
+    "Laptop":             "💻",
+    "Desktop":            "🖥️",
+    "Monitor":            "🖥️",
+    "Peripheral":         "🖱️",
+    "Server":             "🗄️",
+    "Network Equipment":  "🔌",
+    "Software License":   "📄",
+    "Mobile Device":      "📱",
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-zinc-400 text-sm">Loading assets...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Asset Management</h1>
+          <p className="text-zinc-500 text-xs mt-1">{assets.length} total assets</p>
+        </div>
+        {currentUser.role !== "user" && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            <Icon name="plus" className="w-4 h-4" /> Add Asset
+          </button>
+        )}
+      </div>
+
+      {/* Stats cards */}
+      {stats && (
+        <div className="grid grid-cols-4 gap-4 mb-5">
+          <div className="bg-white/5 border border-white/5 rounded-xl p-4">
+            <div className="text-3xl font-bold text-white">{stats.total}</div>
+            <div className="text-zinc-400 text-sm mt-1">Total Assets</div>
+          </div>
+          <div className="bg-emerald-500/10 border border-white/5 rounded-xl p-4">
+            <div className="text-3xl font-bold text-emerald-400">{stats.active}</div>
+            <div className="text-zinc-400 text-sm mt-1">Active</div>
+          </div>
+          <div className="bg-amber-500/10 border border-white/5 rounded-xl p-4">
+            <div className="text-3xl font-bold text-amber-400">{stats.inRepair}</div>
+            <div className="text-zinc-400 text-sm mt-1">In Repair</div>
+          </div>
+          <div className="bg-indigo-500/10 border border-white/5 rounded-xl p-4">
+            <div className="text-3xl font-bold text-indigo-400">
+              ${stats.totalValue?.toLocaleString()}
+            </div>
+            <div className="text-zinc-400 text-sm mt-1">Total Value</div>
+          </div>
+        </div>
+      )}
+
+      {/* Warranty expiry alert */}
+      {stats?.warrantyExpiring > 0 && (
+        <div className="mb-5 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
+          <Icon name="alert" className="w-5 h-5 text-amber-400 flex-shrink-0" />
+          <div>
+            <div className="text-amber-300 font-medium text-sm">
+              {stats.warrantyExpiring} asset(s) warranty expiring within 30 days
+            </div>
+            <div className="text-amber-400/70 text-xs">Review and renew warranties soon</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex gap-3 mb-4">
+        <div className="relative flex-1 max-w-xs">
+          <Icon name="search" className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            value={filter.search}
+            onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))}
+            placeholder="Search assets..."
+            className="w-full bg-[#111827] border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+        <select
+          value={filter.type}
+          onChange={(e) => setFilter((f) => ({ ...f, type: e.target.value }))}
+          className="bg-[#111827] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+        >
+          <option value="all">All Types</option>
+          {["Laptop", "Desktop", "Monitor", "Peripheral", "Server",
+            "Network Equipment", "Software License", "Mobile Device"].map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <select
+          value={filter.status}
+          onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}
+          className="bg-[#111827] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+        >
+          <option value="all">All Statuses</option>
+          {["Active", "In Repair", "Retired", "Disposed", "In Stock"].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Asset table */}
+      <div className="bg-[#111827] border border-white/5 rounded-xl overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-white/5">
+              {["Asset", "Type", "Status", "Assigned To", "Purchase Cost", "Warranty", ""].map((h) => (
+                <th key={h} className="text-left px-4 py-3 text-xs text-zinc-500 font-medium uppercase tracking-wider">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {filtered.map((asset) => {
+              const isExpiringSoon = asset.warrantyExpiry &&
+                new Date(asset.warrantyExpiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+              return (
+                <tr
+                  key={asset._id}
+                  onClick={() => setSelected(asset)}
+                  className="hover:bg-white/5 cursor-pointer transition-colors"
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{ASSET_TYPE_ICONS[asset.type]}</span>
+                      <div>
+                        <div className="text-white text-sm font-medium">{asset.name}</div>
+                        <div className="text-zinc-500 text-xs">
+                          {asset.assetTag || asset.serialNumber || "No tag"}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs font-medium ${ASSET_TYPE_COLORS[asset.type]}`}>
+                      {asset.type}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge
+                      label={asset.status}
+                      colorClass={ASSET_STATUS_COLORS[asset.status]}
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    {asset.assignedTo ? (
+                      <div className="flex items-center gap-2">
+                        <Avatar initials={asset.assignedTo.avatar || asset.assignedTo.name?.slice(0, 2).toUpperCase()} />
+                        <span className="text-zinc-300 text-xs">{asset.assignedTo.name}</span>
+                      </div>
+                    ) : (
+                      <span className="text-zinc-600 text-xs">Unassigned</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-300 text-sm">
+                    {asset.purchaseCost ? `$${asset.purchaseCost.toLocaleString()}` : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    {asset.warrantyExpiry ? (
+                      <span className={`text-xs ${isExpiringSoon ? "text-amber-400" : "text-zinc-400"}`}>
+                        {isExpiringSoon && "⚠ "}
+                        {new Date(asset.warrantyExpiry).toLocaleDateString()}
+                      </span>
+                    ) : (
+                      <span className="text-zinc-600 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {currentUser.role === "admin" && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(asset._id); }}
+                        className="text-zinc-600 hover:text-red-400 transition-colors text-xs"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} className="text-center py-10 text-zinc-600">
+                  No assets found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {selected && (
+        <AssetDetail
+          asset={selected}
+          onClose={() => setSelected(null)}
+          onUpdate={handleUpdate}
+          onDelete={handleDelete}
+          currentUser={currentUser}
+        />
+      )}
+      {showForm && (
+        <AssetForm onClose={() => setShowForm(false)} onCreate={handleCreate} />
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// ASSET DETAIL MODAL
+// =============================================================================
+function AssetDetail({ asset, onClose, onUpdate, onDelete, currentUser }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    status: asset.status,
+    assignedTo: asset.assignedTo?._id || "",
+    notes: asset.notes || "",
+  });
+
+  const handleSave = () => {
+    onUpdate(asset._id, form);
+    setEditing(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#111827] border border-white/10 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-white/5">
+          <div>
+            <h2 className="text-white font-semibold">{asset.name}</h2>
+            <span className="text-xs text-zinc-500">{asset.type}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {currentUser.role !== "user" && (
+              <button
+                onClick={() => setEditing(!editing)}
+                className="text-zinc-500 hover:text-indigo-400 text-xs px-2 py-1 rounded border border-white/10 hover:border-indigo-500 transition-colors"
+              >
+                {editing ? "Cancel" : "Edit"}
+              </button>
+            )}
+            {currentUser.role === "admin" && (
+              <button
+                onClick={() => onDelete(asset._id)}
+                className="text-zinc-500 hover:text-red-400 text-xs px-2 py-1 rounded border border-white/10 hover:border-red-500 transition-colors"
+              >
+                Delete
+              </button>
+            )}
+            <button onClick={onClose} className="text-zinc-500 hover:text-white">
+              <Icon name="x" className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Edit form */}
+          {editing && (
+            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-4 space-y-3">
+              <div>
+                <label className="text-xs text-zinc-400 block mb-1">Status</label>
+                <select
+                  value={form.status}
+                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                  className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+                >
+                  {["Active", "In Repair", "Retired", "Disposed", "In Stock"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-zinc-400 block mb-1">Notes</label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none resize-none"
+                />
+              </div>
+              <button
+                onClick={handleSave}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm py-2 rounded-lg transition-colors"
+              >
+                Save Changes
+              </button>
+            </div>
+          )}
+
+          {/* Asset details */}
+          <div className="space-y-2">
+            {[
+              ["Asset Tag",     asset.assetTag       || "—"],
+              ["Serial Number", asset.serialNumber    || "—"],
+              ["Department",    asset.department      || "—"],
+              ["Location",      asset.location        || "—"],
+              ["Vendor",        asset.vendor          || "—"],
+              ["Purchase Cost", asset.purchaseCost ? `$${asset.purchaseCost.toLocaleString()}` : "—"],
+              ["Purchase Date", asset.purchaseDate ? new Date(asset.purchaseDate).toLocaleDateString() : "—"],
+              ["Warranty Expiry", asset.warrantyExpiry ? new Date(asset.warrantyExpiry).toLocaleDateString() : "—"],
+              ["Assigned To",   asset.assignedTo?.name || "Unassigned"],
+              ["Status",        asset.status],
+            ].map(([label, value]) => (
+              <div key={label} className="flex justify-between text-sm py-1 border-b border-white/5">
+                <span className="text-zinc-500">{label}</span>
+                <span className="text-zinc-200">{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Notes */}
+          {asset.notes && (
+            <div>
+              <div className="text-xs text-zinc-500 mb-1">Notes</div>
+              <p className="text-zinc-300 text-sm bg-white/5 rounded-lg p-3">{asset.notes}</p>
+            </div>
+          )}
+
+          {/* Metadata */}
+          {asset.metadata && Object.keys(asset.metadata).length > 0 && (
+            <div className="bg-[#1a2235] rounded-lg p-3">
+              <div className="text-xs text-zinc-500 mb-2">Additional Info</div>
+              {Object.entries(asset.metadata).map(([k, v]) => (
+                <div key={k} className="flex justify-between text-xs py-0.5">
+                  <span className="text-zinc-400">{k}</span>
+                  <span className="text-zinc-200">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// ASSET FORM MODAL
+// =============================================================================
+function AssetForm({ onClose, onCreate }) {
+  const [form, setForm] = useState({
+    name: "", type: "Laptop", status: "Active",
+    assetTag: "", serialNumber: "", department: "",
+    location: "", vendor: "", purchaseCost: "",
+    purchaseDate: "", warrantyExpiry: "", notes: "",
+  });
+
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleSubmit = () => {
+    if (!form.name) return;
+    onCreate({
+      ...form,
+      purchaseCost: form.purchaseCost ? Number(form.purchaseCost) : 0,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#111827] border border-white/10 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-white/5">
+          <h2 className="text-white font-semibold">Add New Asset</h2>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white">
+            <Icon name="x" className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="text-xs text-zinc-400 block mb-1.5">Asset Name *</label>
+              <input
+                value={form.name}
+                onChange={(e) => setField("name", e.target.value)}
+                placeholder="e.g. Dell Latitude 5520"
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Type</label>
+              <select
+                value={form.type}
+                onChange={(e) => setField("type", e.target.value)}
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none"
+              >
+                {["Laptop", "Desktop", "Monitor", "Peripheral", "Server",
+                  "Network Equipment", "Software License", "Mobile Device"].map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => setField("status", e.target.value)}
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none"
+              >
+                {["Active", "In Repair", "Retired", "Disposed", "In Stock"].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Asset Tag</label>
+              <input
+                value={form.assetTag}
+                onChange={(e) => setField("assetTag", e.target.value)}
+                placeholder="e.g. AST-001"
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Serial Number</label>
+              <input
+                value={form.serialNumber}
+                onChange={(e) => setField("serialNumber", e.target.value)}
+                placeholder="e.g. SN123456"
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Department</label>
+              <input
+                value={form.department}
+                onChange={(e) => setField("department", e.target.value)}
+                placeholder="e.g. IT, Finance"
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Location</label>
+              <input
+                value={form.location}
+                onChange={(e) => setField("location", e.target.value)}
+                placeholder="e.g. Floor 2, Desk 14"
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Vendor</label>
+              <input
+                value={form.vendor}
+                onChange={(e) => setField("vendor", e.target.value)}
+                placeholder="e.g. Dell, HP, Apple"
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Purchase Cost ($)</label>
+              <input
+                type="number"
+                value={form.purchaseCost}
+                onChange={(e) => setField("purchaseCost", e.target.value)}
+                placeholder="e.g. 1200"
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Purchase Date</label>
+              <input
+                type="date"
+                value={form.purchaseDate}
+                onChange={(e) => setField("purchaseDate", e.target.value)}
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1.5">Warranty Expiry</label>
+              <input
+                type="date"
+                value={form.warrantyExpiry}
+                onChange={(e) => setField("warrantyExpiry", e.target.value)}
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-zinc-400 block mb-1.5">Notes</label>
+              <textarea
+                value={form.notes}
+                onChange={(e) => setField("notes", e.target.value)}
+                rows={2}
+                placeholder="Any additional notes..."
+                className="w-full bg-[#1a2235] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 border-t border-white/5 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="text-zinc-400 hover:text-white text-sm px-4 py-2 rounded-lg hover:bg-white/5 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            Add Asset
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -22,6 +22,9 @@ app.use("/api/tickets", ticketRoutes);
 app.use("/api/cmdb",    cmdbRoutes);
 app.use("/api/users",   userRoutes);
 
+const assetRoutes = require("./routes/assets");  // ADD
+app.use("/api/assets", assetRoutes);              // ADD
+
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
@@ -38,3 +41,5 @@ mongoose
     console.error("❌ MongoDB connection failed:", err.message);
     process.exit(1);
   });
+
+  
